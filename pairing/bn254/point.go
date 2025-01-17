@@ -4,7 +4,6 @@ import (
 	"crypto/cipher"
 	"crypto/subtle"
 	"errors"
-	"fmt"
 	"io"
 	"math/big"
 
@@ -243,7 +242,6 @@ func hashToPointHashAndPray(m []byte) kyber.Point {
 			cp.z = *newGFp(1)
 			cp.t = *newGFp(1)
 			pp.g.Set(&cp)
-			fmt.Printf("hash: x=%s, y=%s\n", x.String(), y.String())
 			return pp
 		}
 		x.Add(x, big.NewInt(1))

@@ -43,6 +43,7 @@ func BLSRoutine(t *testing.T, msg []byte, suite *bn254.Suite) {
 	fmt.Printf("sigy num: %d\n", sigy)
 	err = scheme.Verify(public, msg, sig)
 	require.Nil(t, err)
+	fmt.Println(public)
 }
 
 func TestBLSFailSig(t *testing.T) {
