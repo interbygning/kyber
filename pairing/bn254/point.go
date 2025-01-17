@@ -4,12 +4,16 @@ import (
 	"crypto/cipher"
 	"crypto/subtle"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"go.dedis.ch/kyber/v4"
 	"go.dedis.ch/kyber/v4/group/mod"
 	"golang.org/x/crypto/sha3"
+
+	_ "github.com/ethereum/go-ethereum/crypto"
 )
 
 var marshalPointID1 = [8]byte{'b', 'n', '2', '5', '4', '.', 'g', '1'}
@@ -204,7 +208,8 @@ func (p *pointG1) String() string {
 }
 
 func (p *pointG1) Hash(m []byte) kyber.Point {
-	return hashToPoint(p.dst, m)
+	//return hashToPoint(p.dst, m)
+	return hashToPointHashAndPray(m)
 }
 
 func hashToPoint(domain, m []byte) kyber.Point {
@@ -213,6 +218,54 @@ func hashToPoint(domain, m []byte) kyber.Point {
 	p1 := mapToPoint(domain, e1)
 	p := p0.Add(p0, p1)
 	return p
+}
+
+// use keccak256(m) to get byte32, modulus N to get 32B int
+// use it as x, and calculate y^2 = x^3 + 3
+// if no y exist, try x+1, x+2, x+3, ... until y exist
+func hashToPointHashAndPray(m []byte) kyber.Point {
+	h := crypto.Keccak256(m)
+	x := new(big.Int).SetBytes(h)
+	x = x.Mod(x, p)
+	i := 0
+	for {
+		y := new(big.Int).Exp(x, big.NewInt(3), p)
+		y = y.Add(y, big.NewInt(3))
+		y.Mod(y, p)
+		y, ok := sqrtModP(y)
+		if ok {
+			xx := newGFpFromBase10(x.String())
+			yy := newGFpFromBase10(y.String())
+			pp := newPointG1(nil)
+			cp := curvePoint{}
+			cp.x = *xx
+			cp.y = *yy
+			cp.z = *newGFp(1)
+			cp.t = *newGFp(1)
+			pp.g.Set(&cp)
+			fmt.Printf("hash: x=%s, y=%s\n", x.String(), y.String())
+			return pp
+		}
+		x.Add(x, big.NewInt(1))
+		i++
+		if i > 20 {
+			panic("hashToPointHashAndPray: no y exist after 20 tries")
+		}
+	}
+}
+
+// returns sqrt of x mod p, or false if no sqrt exists
+func sqrtModP(x *big.Int) (*big.Int, bool) {
+	q := big.NewInt(0)
+	// this is (p+1)/4
+	q.SetString("c19139cb84c680a6e14116da060561765e05aa45a1c72a34f082305b61f3f52", 16)
+	y := new(big.Int).Exp(x, q, p)
+	y2 := new(big.Int).Mul(y, y)
+	y2.Mod(y2, p)
+	if y2.Cmp(x) == 0 {
+		return y, true
+	}
+	return nil, false
 }
 
 func hashToField(domain, m []byte) (*gfP, *gfP) {
