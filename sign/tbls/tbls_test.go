@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/kyber/v4/group/mod"
@@ -39,6 +40,7 @@ func TBLSRoutine(test *testing.T, msg []byte, n int) {
 	suite := bn254.NewSuiteRand(stream)
 	scheme := NewThresholdSchemeOnG1(suite)
 	th := n/2 + 1
+	fmt.Printf("t/n: %d/%d\n", th, n)
 
 	//secret := suite.G1().Scalar().Pick(stream)
 	str := "5532719355993668376817313988550233634227690018686483329169046691728862458102"
@@ -62,6 +64,14 @@ func TBLSRoutine(test *testing.T, msg []byte, n int) {
 		require.Nil(test, err)
 		sigShares = append(sigShares, sig)
 	}
+	s1 := priPoly.Shares(n)[0]
+	start := time.Now()
+	for i := 0; i < 10000; i++ {
+		scheme.Sign(s1, msg)
+	}
+	elapsed := time.Since(start)
+	fmt.Printf("Signed %d messages in %s\n", 10000, elapsed)
+	fmt.Printf("Speed: %.2f signs/second\n", float64(10000)/elapsed.Seconds())
 
 	sig, err := scheme.Recover(pubPoly, msg, sigShares, th, n)
 	require.Nil(test, err)
@@ -70,6 +80,13 @@ func TBLSRoutine(test *testing.T, msg []byte, n int) {
 	//fmt.Printf("sig(len %d) hex: %x\n", len(sig), sig)
 	fmt.Printf("sigx num: %d\n", sigx)
 	fmt.Printf("sigy num: %d\n", sigy)
+	start = time.Now()
+	for i := 0; i < 100; i++ {
+		scheme.Recover(pubPoly, msg, sigShares, th, n)
+	}
+	elapsed = time.Since(start)
+	fmt.Printf("Recovered %d messages in %s\n", 100, elapsed)
+	fmt.Printf("Speed: %.2f recovers/second\n", float64(100)/elapsed.Seconds())
 
 	err = scheme.VerifyRecovered(pubPoly.Commit(), msg, sig)
 	require.Nil(test, err)
