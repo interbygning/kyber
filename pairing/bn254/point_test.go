@@ -4,10 +4,34 @@ import (
 	"bytes"
 	"encoding/hex"
 	"errors"
+	"math/big"
 	"testing"
 
 	"golang.org/x/crypto/sha3"
 )
+
+func TestSqrt(t *testing.T) {
+	// test vectors from
+	q := big.NewInt(0)
+	// this is (p+1)/4
+	q.SetString("c19139cb84c680a6e14116da060561765e05aa45a1c72a34f082305b61f3f52", 16)
+	t.Logf("q: %s", q.Text(10))
+	t.Logf("p: %s", p.Text(10))
+
+	y, err := big.NewInt(0).SetString("3793767019703003364522970305881959608533388291937108457030659789191024893920", 10)
+	if !err {
+		t.Fatal("failed to set big int")
+	}
+	t.Logf("y: %s", y.Text(10))
+	y2 := new(big.Int).Exp(y, q, p)
+	t.Logf("y2: %s", y2.Text(10))
+	y2 = new(big.Int).Mul(y2, y2)
+	y2 = new(big.Int).Mod(y2, p)
+	t.Logf("y2: %s", y2.Text(10))
+
+	hashPoint := hashToPointHashAndPray([]byte("Hello BLS"))
+	t.Logf("hashPoint: %s", hashPoint)
+}
 
 func TestPointG1_HashToPoint(t *testing.T) {
 	domain := []byte("domain_separation_tag_test_12345")
