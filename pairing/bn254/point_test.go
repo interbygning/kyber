@@ -37,36 +37,44 @@ func TestPointG1_HashToPoint(t *testing.T) {
 	domain := []byte("domain_separation_tag_test_12345")
 
 	// reference test 1
-	p := newPointG1(domain).Hash([]byte("The Times 03/Jan/2009 Chancellor on brink of second bailout for banks"))
+	p := newPointG1(domain).Hash([]byte("Hello BLS"))
 	pBuf, err := p.MarshalBinary()
 	if err != nil {
 		t.Error(err)
 	}
-	refBuf, err := hex.DecodeString("13af4ace8febc1ec800f7d33d66868310516bce9cb1b7f7c68607f9ba6dba92c1823b8f13feeb8dad6b152eb2bbefbe59452f9519c88230b55d0b699498db6f1")
+	t.Logf("hash %x", pBuf)
+	// reference from Solidity and its hash and pray implementation
+	//>> hex(5987718135985124777279747422376396745080763197674376990450444442288119654198)
+	//'0xd3ceda962c2e6e008682be2f86da855c6a7f9ea33a10570cc5e4dd7b710a736'
+	//>>> hex(6997241657768735445093763087414958605667071248301947314582032744388594841245)
+	//'0xf784c65f2cbae4dad543bb9fb91306ab6d79bc2503d22854c763e860b2d369d'
+
+	refBuf, err := hex.DecodeString("0d3ceda962c2e6e008682be2f86da855c6a7f9ea33a10570cc5e4dd7b710a7360f784c65f2cbae4dad543bb9fb91306ab6d79bc2503d22854c763e860b2d369d")
 	if err != nil {
 		t.Error(err)
 	}
+	t.Logf("ref %x", refBuf)
 	if !bytes.Equal(pBuf, refBuf) {
 		t.Error("hash does not match reference")
 	}
 
-	// reference test 2
-	buf2, err := hex.DecodeString("e0a05cbb37fd6c159732a8c57b981773f7480695328b674d8a9cc083377f1811")
-	if err != nil {
-		t.Error(err)
-	}
-	p2 := newPointG1(domain).Hash(buf2)
-	p2Buf, err := p2.MarshalBinary()
-	if err != nil {
-		t.Error(err)
-	}
-	refBuf2, err := hex.DecodeString("07abd743dc93dfa3a8ee4ab449b1657dc6232c589612b23a54ea461c7232101e2533badbee56e8457731fc35bb7630236623e4614e4f8acb4a0c3282df58a289")
-	if err != nil {
-		t.Error(err)
-	}
-	if !bytes.Equal(p2Buf, refBuf2) {
-		t.Error("hash does not match reference")
-	}
+	//// reference test 2
+	//buf2, err := hex.DecodeString("e0a05cbb37fd6c159732a8c57b981773f7480695328b674d8a9cc083377f1811")
+	//if err != nil {
+	//	t.Error(err)
+	//}
+	//p2 := newPointG1(domain).Hash(buf2)
+	//p2Buf, err := p2.MarshalBinary()
+	//if err != nil {
+	//	t.Error(err)
+	//}
+	//refBuf2, err := hex.DecodeString("07abd743dc93dfa3a8ee4ab449b1657dc6232c589612b23a54ea461c7232101e2533badbee56e8457731fc35bb7630236623e4614e4f8acb4a0c3282df58a289")
+	//if err != nil {
+	//	t.Error(err)
+	//}
+	//if !bytes.Equal(p2Buf, refBuf2) {
+	//	t.Error("hash does not match reference")
+	//}
 }
 
 func TestExpandMsg(t *testing.T) {

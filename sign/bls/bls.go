@@ -24,7 +24,7 @@ import (
 	"go.dedis.ch/kyber/v4/sign"
 )
 
-type scheme struct {
+type Scheme struct {
 	sigGroup kyber.Group
 	keyGroup kyber.Group
 	pairing  func(signature, public, hashedPoint kyber.Point) bool
@@ -38,7 +38,7 @@ func NewSchemeOnG1(suite pairing.Suite) sign.Scheme {
 	pairing := func(public, hashedMsg, sigPoint kyber.Point) bool {
 		return suite.ValidatePairing(hashedMsg, public, sigPoint, keyGroup.Point().Base())
 	}
-	return &scheme{
+	return &Scheme{
 		sigGroup: sigGroup,
 		keyGroup: keyGroup,
 		pairing:  pairing,
@@ -53,20 +53,20 @@ func NewSchemeOnG2(suite pairing.Suite) sign.Scheme {
 	pairing := func(public, hashedMsg, sigPoint kyber.Point) bool {
 		return suite.ValidatePairing(public, hashedMsg, keyGroup.Point().Base(), sigPoint)
 	}
-	return &scheme{
+	return &Scheme{
 		sigGroup: sigGroup,
 		keyGroup: keyGroup,
 		pairing:  pairing,
 	}
 }
 
-func (s *scheme) NewKeyPair(random cipher.Stream) (kyber.Scalar, kyber.Point) {
+func (s *Scheme) NewKeyPair(random cipher.Stream) (kyber.Scalar, kyber.Point) {
 	secret := s.keyGroup.Scalar().Pick(random)
 	public := s.keyGroup.Point().Mul(secret, nil)
 	return secret, public
 }
 
-func (s *scheme) NewKeyPairFromPrivateKeyString(str string) (kyber.Scalar, kyber.Point, error) {
+func (s *Scheme) NewKeyPairFromPrivateKeyString(str string) (kyber.Scalar, kyber.Point, error) {
 	strInt, ok := new(big.Int).SetString(str, 10)
 	if !ok {
 		return nil, nil, errors.New("failed to parse private key string")
@@ -77,7 +77,7 @@ func (s *scheme) NewKeyPairFromPrivateKeyString(str string) (kyber.Scalar, kyber
 	return secret, public, nil
 }
 
-func (s *scheme) Sign(private kyber.Scalar, msg []byte) ([]byte, error) {
+func (s *Scheme) Sign(private kyber.Scalar, msg []byte) ([]byte, error) {
 	hashable, ok := s.sigGroup.Point().(kyber.HashablePoint)
 	if !ok {
 		return nil, errors.New("point needs to implement hashablePoint")
@@ -92,7 +92,7 @@ func (s *scheme) Sign(private kyber.Scalar, msg []byte) ([]byte, error) {
 	return sig, nil
 }
 
-func (s *scheme) Verify(X kyber.Point, msg, sig []byte) error {
+func (s *Scheme) Verify(X kyber.Point, msg, sig []byte) error {
 	hashable, ok := s.sigGroup.Point().(kyber.HashablePoint)
 	if !ok {
 		return errors.New("bls: point needs to implement hashablePoint")

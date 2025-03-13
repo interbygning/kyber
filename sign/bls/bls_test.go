@@ -22,7 +22,7 @@ func TestBLS12381(t *testing.T) {
 	suite := kilic.NewBLS12381Suite()
 	msg := []byte("Hello BLS")
 	scheme := NewSchemeOnG1(suite)
-	private, public, err := scheme.NewKeyPairFromPrivateKeyString("5532719355993668376817313988550233634227690018686483329169046691728862458102")
+	private, public, err := scheme.(*Scheme).NewKeyPairFromPrivateKeyString("5532719355993668376817313988550233634227690018686483329169046691728862458102")
 	require.Nil(t, err)
 	sig, err := scheme.Sign(private, msg)
 	require.Nil(t, err)
@@ -46,9 +46,9 @@ func FuzzBLS(f *testing.F) {
 
 func BLSRoutine(t *testing.T, msg []byte, suite *bn254.Suite) {
 	scheme := NewSchemeOnG1(suite)
-	//private, public := scheme.NewKeyPair(blake2xb.New(msg))
+	//private, public := Scheme.NewKeyPair(blake2xb.New(msg))
 	// this is to match a private key generated in solidity test code
-	private, public, err := scheme.NewKeyPairFromPrivateKeyString("5532719355993668376817313988550233634227690018686483329169046691728862458102")
+	private, public, err := scheme.(*Scheme).NewKeyPairFromPrivateKeyString("5532719355993668376817313988550233634227690018686483329169046691728862458102")
 	require.Nil(t, err)
 	//fmt.Printf("public(len %d) hex: %x")
 	sig, err := scheme.Sign(private, msg)

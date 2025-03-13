@@ -11,7 +11,7 @@ import (
 // Implemented by BLS and TBLS
 type Scheme interface {
 	NewKeyPair(random cipher.Stream) (kyber.Scalar, kyber.Point)
-	NewKeyPairFromPrivateKeyString(str string) (kyber.Scalar, kyber.Point, error)
+	//NewKeyPairFromPrivateKeyString(str string) (kyber.Scalar, kyber.Point, error)
 	Sign(private kyber.Scalar, msg []byte) ([]byte, error)
 	Verify(public kyber.Point, msg, sig []byte) error
 }
