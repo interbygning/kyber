@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/kyber/v4"
 	"go.dedis.ch/kyber/v4/group/edwards25519"
+	"go.dedis.ch/kyber/v4/group/s256"
 	"go.dedis.ch/kyber/v4/pairing/bn256"
 	"go.dedis.ch/kyber/v4/share"
 	"go.dedis.ch/kyber/v4/sign/schnorr"
@@ -212,7 +213,8 @@ func RunDKG(t *testing.T, tns []*TestNode, conf Config,
 func TestSelfEvictionDealer(t *testing.T) {
 	n := 5
 	thr := 3
-	suite := edwards25519.NewBlakeSHA256Ed25519()
+	//suite := edwards25519.NewBlakeSHA256Ed25519()
+	suite := s256.NewSuite()
 	tns := GenerateTestNodes(suite, n)
 	skippedIndex := rand.Intn(n)
 	var newIndex uint32 = 53 // XXX should there be a limit to the index ?
@@ -265,7 +267,9 @@ func TestSelfEvictionDealer(t *testing.T) {
 func TestDKGSkipIndex(t *testing.T) {
 	n := 5
 	thr := 4
-	suite := edwards25519.NewBlakeSHA256Ed25519()
+	//suite := edwards25519.NewBlakeSHA256Ed25519()
+	suite := s256.NewSuite()
+
 	tns := GenerateTestNodes(suite, n)
 	skippedIndex := 1
 	var newIndex uint32 = 53 // XXX should there be a limit to the index ?
@@ -367,7 +371,9 @@ func TestDKGSkipIndex(t *testing.T) {
 func TestDKGFull(t *testing.T) {
 	n := 5
 	thr := n
-	suite := edwards25519.NewBlakeSHA256Ed25519()
+	//suite := edwards25519.NewBlakeSHA256Ed25519()
+	suite := s256.NewSuite()
+
 	tns := GenerateTestNodes(suite, n)
 	list := NodesFromTest(tns)
 	conf := Config{
@@ -385,6 +391,8 @@ func TestSelfEvictionShareHolder(t *testing.T) {
 	n := 5
 	thr := 4
 	var suite = bn256.NewSuiteG2()
+	//suite := s256.NewSuite()
+
 	var sigSuite = bn256.NewSuiteG1()
 	tns := GenerateTestNodes(suite, n)
 	list := NodesFromTest(tns)
@@ -473,6 +481,8 @@ func TestDKGResharing(t *testing.T) {
 	n := 5
 	thr := 4
 	var suite = bn256.NewSuiteG2()
+	//suite := s256.NewSuite()
+
 	var sigSuite = bn256.NewSuiteG1()
 	tns := GenerateTestNodes(suite, n)
 	list := NodesFromTest(tns)
@@ -578,7 +588,9 @@ func TestDKGResharing(t *testing.T) {
 func TestDKGThreshold(t *testing.T) {
 	n := 5
 	thr := 4
-	suite := edwards25519.NewBlakeSHA256Ed25519()
+	//suite := edwards25519.NewBlakeSHA256Ed25519()
+	suite := s256.NewSuite()
+
 	tns := GenerateTestNodes(suite, n)
 	list := NodesFromTest(tns)
 	conf := Config{
@@ -644,6 +656,8 @@ func TestDKGResharingFast(t *testing.T) {
 	n := 6
 	thr := 4
 	var suite = bn256.NewSuiteG2()
+	//suite := s256.NewSuite()
+
 	var sigSuite = bn256.NewSuiteG1()
 	tns := GenerateTestNodes(suite, n)
 	list := NodesFromTest(tns)
@@ -808,7 +822,9 @@ func TestDKGResharingFast(t *testing.T) {
 func TestDKGFullFast(t *testing.T) {
 	n := 5
 	thr := n
-	suite := edwards25519.NewBlakeSHA256Ed25519()
+	//suite := edwards25519.NewBlakeSHA256Ed25519()
+	suite := s256.NewSuite()
+
 	tns := GenerateTestNodes(suite, n)
 	list := NodesFromTest(tns)
 	conf := Config{
@@ -826,7 +842,9 @@ func TestDKGFullFast(t *testing.T) {
 func TestDKGNonceInvalid(t *testing.T) {
 	n := 5
 	thr := n
-	suite := edwards25519.NewBlakeSHA256Ed25519()
+	//suite := edwards25519.NewBlakeSHA256Ed25519()
+	suite := s256.NewSuite()
+
 	tns := GenerateTestNodes(suite, n)
 	list := NodesFromTest(tns)
 	conf := &Config{
@@ -853,7 +871,9 @@ func TestDKGNonceInvalid(t *testing.T) {
 func TestDKGAbsentAuth(t *testing.T) {
 	n := 5
 	thr := n
-	suite := edwards25519.NewBlakeSHA256Ed25519()
+	//suite := edwards25519.NewBlakeSHA256Ed25519()
+	suite := s256.NewSuite()
+
 	tns := GenerateTestNodes(suite, n)
 	list := NodesFromTest(tns)
 	conf := &Config{
@@ -943,7 +963,9 @@ func TestDKGNonceInvalidEviction(t *testing.T) {
 func TestDKGInvalidResponse(t *testing.T) {
 	n := 6
 	thr := 3
-	suite := edwards25519.NewBlakeSHA256Ed25519()
+	//suite := edwards25519.NewBlakeSHA256Ed25519()
+	suite := s256.NewSuite()
+
 	tns := GenerateTestNodes(suite, n)
 	list := NodesFromTest(tns)
 	conf := Config{
@@ -1026,7 +1048,9 @@ func TestDKGInvalidResponse(t *testing.T) {
 func TestDKGTooManyComplaints(t *testing.T) {
 	n := 5
 	thr := 3
-	suite := edwards25519.NewBlakeSHA256Ed25519()
+	//suite := edwards25519.NewBlakeSHA256Ed25519()
+	suite := s256.NewSuite()
+
 	tns := GenerateTestNodes(suite, n)
 	list := NodesFromTest(tns)
 	conf := Config{
