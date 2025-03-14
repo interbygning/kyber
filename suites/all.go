@@ -3,6 +3,7 @@ package suites
 import (
 	"go.dedis.ch/kyber/v4/group/edwards25519"
 	"go.dedis.ch/kyber/v4/group/p256"
+	"go.dedis.ch/kyber/v4/group/s256"
 	"go.dedis.ch/kyber/v4/pairing/bls12381/circl"
 	"go.dedis.ch/kyber/v4/pairing/bls12381/kilic"
 	"go.dedis.ch/kyber/v4/pairing/bn254"
@@ -14,6 +15,7 @@ func init() {
 	// in production environment when possible
 	register(p256.NewBlakeSHA256P256())
 	register(p256.NewBlakeSHA256QR512())
+	register(s256.NewSuite())
 	register(bn256.NewSuiteG1())
 	register(bn256.NewSuiteG2())
 	register(bn256.NewSuiteGT())
