@@ -5,10 +5,8 @@ import (
 
 	"go.dedis.ch/kyber/v4"
 	"go.dedis.ch/kyber/v4/group/s256"
-	"go.dedis.ch/kyber/v4/pairing/bn254"
 	"go.dedis.ch/kyber/v4/share"
 	"go.dedis.ch/kyber/v4/sign/tbls"
-	"go.dedis.ch/kyber/v4/util/random"
 )
 
 type Network struct {
@@ -69,50 +67,69 @@ func TestDKGNew(t *testing.T) {
 
 	}
 	// make sure all public keys are the same
-	pk := distKeys[1].Commits[0]
+	pk := distKeys[1].Commits1[0]
 
 	for _, dk := range distKeys {
-		if !pk.Equal(dk.Commits[0]) {
+		if !pk.Equal(dk.Commits1[0]) {
 			t.Fatal("public key not equal")
 		}
 	}
 
-	// now start to sign one message
-	suite := bn254.NewSuiteRand(random.New())
-	scheme := tbls.NewThresholdSchemeOnG1(suite)
 	//tblScheme := bls.NewSchemeOnG1(nodeIdSuite)
+	gen := net.Generators[0]
+	scheme1 := tbls.NewThresholdSchemeOnG1(gen.suite1)
+	scheme2 := tbls.NewThresholdSchemeOnG1(gen.suite2)
 	msg := []byte("Hello BLS")
-	sigShares := make([][]byte, 0)
+	sigShares1 := make([][]byte, 0)
+	sigShares2 := make([][]byte, 0)
 	for _, distKey := range distKeys {
-		sig, err := scheme.Sign(distKey.Share, msg)
+		sig, err := scheme1.Sign(distKey.Share1, msg)
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Logf("sig(%d): %v", distKey.Share.I, sig)
-		sigShares = append(sigShares, sig)
+		sigShares1 = append(sigShares1, sig)
 
+		sig, err = scheme2.Sign(distKey.Share2, msg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sigShares2 = append(sigShares2, sig)
 	}
-	priShares := make([]*share.PriShare, 0)
+	priShares1 := make([]*share.PriShare, 0)
 	for _, dk := range distKeys {
-		priShares = append(priShares, dk.Share)
+		priShares1 = append(priShares1, dk.Share1)
 	}
-	secretPoly, err := share.RecoverPriPoly(suite.G2(), priShares, th, n)
+	secretPoly, err := share.RecoverPriPoly(gen.suite1.G2(), priShares1, th, n)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pubPoly := secretPoly.Commit(suite.G2().Point().Base())
-	t.Logf("pubPoly commits: %v", pubPoly.Commit())
-	pubPoly2 := share.NewPubPoly(suite.G2(), nil, distKeys[1].Commits)
-	t.Logf("distKey commit: %v", pubPoly2.Commit())
-	if !pubPoly.Equal(pubPoly2) {
+	pubPolyExp := secretPoly.Commit(gen.suite1.G2().Point().Base())
+	pubPoly := share.NewPubPoly(gen.suite1.G2(), nil, distKeys[1].Commits1)
+	if !pubPoly.Equal(pubPolyExp) {
 		t.Fatal("public key not equal")
 	}
-	sig, err := scheme.Recover(pubPoly, msg, sigShares, th, n)
+
+	sig, err := scheme1.Recover(pubPoly, msg, sigShares1, th, n)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = scheme.VerifyRecovered(pubPoly.Commit(), msg, sig)
+	err = scheme1.VerifyRecovered(pubPoly.Commit(), msg, sig)
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	pubPoly2 := share.NewPubPoly(gen.suite2.G2(), nil, distKeys[1].Commits2)
+
+	sig, err = scheme2.Recover(pubPoly2, msg, sigShares2, th, n)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = scheme2.VerifyRecovered(pubPoly2.Commit(), msg, sig)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("BN254 public key: %v", pubPoly.Commit())
+	t.Logf("BLS12-381 public key: %v", pubPoly2.Commit())
 }

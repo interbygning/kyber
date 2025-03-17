@@ -43,9 +43,13 @@ type Node struct {
 
 type DealBundle struct {
 	DealerIndex uint32
-	Deals       []Deal
-	// Public coefficients of the public polynomial used to create the shares
-	Public []kyber.Point
+	// BN254 deals
+	Deals []Deal
+
+	// BN254 Public coefficients of the public polynomial used to create the shares
+	Public1 []kyber.Point
+	// BLS12-381 Public coefficients of the public polynomial used to create the shares
+	Public2 []kyber.Point
 	// SessionID of the current run
 	SessionID []byte
 	// Signature over the hash of the whole bundle
@@ -56,10 +60,14 @@ type Deal struct {
 	// Index of the share holder
 	ShareIndex uint32
 	// encrypted share issued to the share holder
-	EncryptedShare []byte
+	EncryptedShare1 []byte // BN254
+	// encrypted share issued to the share holder
+	EncryptedShare2 []byte // BLS12-381
 }
 
 type DistKeyShare struct {
-	Commits []kyber.Point
-	Share   *share.PriShare
+	Commits1 []kyber.Point // BN254
+	Commits2 []kyber.Point // BLS12-381
+	Share1   *share.PriShare
+	Share2   *share.PriShare
 }

@@ -6,6 +6,7 @@ import (
 	"go.dedis.ch/kyber/v4"
 	"go.dedis.ch/kyber/v4/encrypt/ecies"
 	"go.dedis.ch/kyber/v4/group/s256"
+	"go.dedis.ch/kyber/v4/pairing"
 	"go.dedis.ch/kyber/v4/pairing/bls12381/kilic"
 	"go.dedis.ch/kyber/v4/pairing/bn254"
 	"go.dedis.ch/kyber/v4/share"
@@ -48,17 +49,18 @@ type DistKeyGenerator struct {
 	threshold    int    // threshold+1 is the number of nodes needed to reconstruct the secret
 
 	// curve 1: BN254
-	suite1 Suite
+	suite1 pairing.Suite
 	dpriv1 *share.PriPoly
 	dpub1  *share.PubPoly
 
 	// curve 2: BLS12-381
-	suite2 Suite
+	suite2 pairing.Suite
 	dpriv2 *share.PriPoly
 	dpub2  *share.PubPoly
 
 	// the valid shares we received; scalar is not dependent on curve
-	validShares map[uint32]kyber.Scalar
+	validShares1 map[uint32]kyber.Scalar
+	validShares2 map[uint32]kyber.Scalar
 
 	// all public polynomials we have seen on two curves; 1 is on BN254, 2 is on BLS12-381
 	allPublics1 map[uint32]*share.PubPoly
@@ -73,10 +75,11 @@ func NewDistKeyGenerator(idx uint32, threshold int, nodes []Node, nodeIdSecret k
 
 	randomStream := random.New()
 	// make sure that the secret fits in the  smaller curve BN254
-	secretCoeff := suite1.G1().Scalar().Pick(randomStream)
-	dpriv1 := share.NewPriPoly(suite1.G2(), threshold, secretCoeff, randomStream)
+	secretCoeff1 := suite1.G2().Scalar().Pick(randomStream)
+	secretCoeff2 := suite2.G2().Scalar().Pick(randomStream)
+	dpriv1 := share.NewPriPoly(suite1.G2(), threshold, secretCoeff1, randomStream)
 	dpub1 := dpriv1.Commit(suite1.G2().Point().Base())
-	dpriv2 := share.NewPriPoly(suite2.G2(), threshold, secretCoeff, randomStream)
+	dpriv2 := share.NewPriPoly(suite2.G2(), threshold, secretCoeff2, randomStream)
 	dpub2 := dpriv2.Commit(suite2.G2().Point().Base())
 
 	return &DistKeyGenerator{
@@ -93,7 +96,8 @@ func NewDistKeyGenerator(idx uint32, threshold int, nodes []Node, nodeIdSecret k
 		suite2:       suite2,
 		dpriv2:       dpriv2,
 		dpub2:        dpub2,
-		validShares:  make(map[uint32]kyber.Scalar),
+		validShares1: make(map[uint32]kyber.Scalar),
+		validShares2: make(map[uint32]kyber.Scalar),
 		allPublics1:  make(map[uint32]*share.PubPoly),
 		allPublics2:  make(map[uint32]*share.PubPoly),
 	}
@@ -107,23 +111,31 @@ func (gen *DistKeyGenerator) Deal() (*DealBundle, error) {
 
 	for _, node := range gen.nodes {
 		// compute share
-		si := gen.dpriv1.Eval(node.Index).V
-
-		msg, _ := si.MarshalBinary()
-		cipher, err := ecies.Encrypt(gen.nodeIdSuite, node.Public, msg, nil)
+		si1 := gen.dpriv1.Eval(node.Index).V
+		si2 := gen.dpriv2.Eval(node.Index).V
+		msg1, _ := si1.MarshalBinary()
+		msg2, _ := si2.MarshalBinary()
+		cipher1, err := ecies.Encrypt(gen.nodeIdSuite, node.Public, msg1, nil)
+		if err != nil {
+			return nil, err
+		}
+		cipher2, err := ecies.Encrypt(gen.nodeIdSuite, node.Public, msg2, nil)
 		if err != nil {
 			return nil, err
 		}
 		deals = append(deals, Deal{
-			ShareIndex:     node.Index,
-			EncryptedShare: cipher,
+			ShareIndex:      node.Index,
+			EncryptedShare1: cipher1,
+			EncryptedShare2: cipher2,
 		})
 	}
-	_, commits := gen.dpub1.Info()
+	_, commits1 := gen.dpub1.Info()
+	_, commits2 := gen.dpub2.Info()
 	return &DealBundle{
 		DealerIndex: gen.idx,
 		Deals:       deals,
-		Public:      commits,
+		Public1:     commits1,
+		Public2:     commits2,
 		SessionID:   []byte("session-id"),
 		Signature:   nil, // no need to sign as the bundle submission is via a tx which already needs to signed.
 	}, nil
@@ -135,58 +147,95 @@ func (gen *DistKeyGenerator) Deal() (*DealBundle, error) {
 func (gen *DistKeyGenerator) ProcessDealBundles(bundles []*DealBundle) (*DistKeyShare, error) {
 	//nodeIdSuite := bn254.NewSuiteG2()
 	for _, bundle := range bundles {
-		gen.allPublics1[bundle.DealerIndex] = share.NewPubPoly(bn254.NewSuiteG2(), nil, bundle.Public)
+		gen.allPublics1[bundle.DealerIndex] = share.NewPubPoly(gen.suite1.G2(), nil, bundle.Public1)
+		gen.allPublics2[bundle.DealerIndex] = share.NewPubPoly(gen.suite2.G2(), nil, bundle.Public2)
 	}
-	finalShare := gen.nodeIdSuite.Scalar().Zero()
+	finalShare1 := gen.suite1.G2().Scalar().Zero()
+	finalShare2 := gen.suite2.G2().Scalar().Zero()
 	var err error
-	var finalPub *share.PubPoly
+	var finalPub1 *share.PubPoly
+	var finalPub2 *share.PubPoly
 	for _, n := range gen.nodes {
 		bundle := bundles[n.Index]
 		for _, deal := range bundle.Deals {
 			if deal.ShareIndex != gen.idx {
 				continue
 			}
-			plain, err := ecies.Decrypt(gen.nodeIdSuite, gen.nodeIdSecret, deal.EncryptedShare, nil)
+			plain1, err := ecies.Decrypt(gen.nodeIdSuite, gen.nodeIdSecret, deal.EncryptedShare1, nil)
 			if err != nil {
 				return nil, err
 			}
-			sh := gen.nodeIdSuite.Scalar().SetBytes(plain)
-			gen.validShares[bundle.DealerIndex] = sh
+			sh := gen.suite1.G2().Scalar().SetBytes(plain1)
+			gen.validShares1[bundle.DealerIndex] = sh
+
+			plain2, err := ecies.Decrypt(gen.nodeIdSuite, gen.nodeIdSecret, deal.EncryptedShare2, nil)
+			if err != nil {
+				return nil, err
+			}
+			sh = gen.suite2.G2().Scalar().SetBytes(plain2)
+			gen.validShares2[bundle.DealerIndex] = sh
 		}
-		sh, ok := gen.validShares[n.Index]
+		sh1, ok := gen.validShares1[n.Index]
 		if !ok {
-			return nil, fmt.Errorf("BUG: private share not found from dealer %d", n.Index)
+			return nil, fmt.Errorf("BUG: private share (BN254) not found from dealer %d", n.Index)
+		}
+		sh2, ok := gen.validShares2[n.Index]
+		if !ok {
+			return nil, fmt.Errorf("BUG: private share (BLS12-381) not found from dealer %d", n.Index)
 		}
 
-		pub, ok := gen.allPublics1[n.Index]
+		pub1, ok := gen.allPublics1[n.Index]
 		if !ok {
-			return nil, fmt.Errorf("BUG: idx %d public polynomial not found from dealer %d", gen.idx, n.Index)
+			return nil, fmt.Errorf("BUG: idx %d public BN254 polynomial not found from dealer %d", gen.idx, n.Index)
 		}
-
+		pub2, ok := gen.allPublics2[n.Index]
+		if !ok {
+			return nil, fmt.Errorf("BUG: idx %d public BLS12-381 polynomial not found from dealer %d", gen.idx, n.Index)
+		}
 		// check if share is valid w.r.t. public commitment
-		comm := pub.Eval(gen.idx).V
-		G2 := bn254.NewSuiteG2()
-		commShare := G2.Point().Mul(sh, nil)
+		comm := pub1.Eval(gen.idx).V
+		commShare := gen.suite1.G2().Point().Mul(sh1, nil)
 		if !comm.Equal(commShare) {
-			return nil, fmt.Errorf("Deal share invalid wrt public poly")
+			return nil, fmt.Errorf("Deal share invalid wrt public poly (BN254)")
 		}
+		comm = pub2.Eval(gen.idx).V
+		commShare = gen.suite2.G2().Point().Mul(sh2, nil)
+		if !comm.Equal(commShare) {
+			return nil, fmt.Errorf("Deal share invalid wrt public poly (BLS12-381)")
+		}
+		finalShare1 = finalShare1.Add(finalShare1, sh1)
+		finalShare2 = finalShare2.Add(finalShare2, sh2)
 
-		finalShare = finalShare.Add(finalShare, sh)
-		if finalPub == nil {
-			finalPub = pub
+		if finalPub1 == nil {
+			finalPub1 = pub1
 		} else {
-			finalPub, err = finalPub.Add(pub)
+			finalPub1, err = finalPub1.Add(pub1)
 			if err != nil {
 				return nil, err
 			}
 		}
+		if finalPub2 == nil {
+			finalPub2 = pub2
+		} else {
+			finalPub2, err = finalPub2.Add(pub2)
+			if err != nil {
+				return nil, err
+			}
+		}
+
 	}
-	if finalPub == nil {
-		return nil, fmt.Errorf("BUG: final public polynomial is nil")
+	if finalPub1 == nil {
+		return nil, fmt.Errorf("BUG: final public1 polynomial is nil")
 	}
-	_, commits := finalPub.Info()
+	if finalPub2 == nil {
+		return nil, fmt.Errorf("BUG: final public2 polynomial is nil")
+	}
+	_, commits1 := finalPub1.Info()
+	_, commits2 := finalPub2.Info()
 	return &DistKeyShare{
-		Commits: commits,
-		Share:   &share.PriShare{I: gen.idx, V: finalShare},
+		Commits1: commits1,
+		Commits2: commits2,
+		Share1:   &share.PriShare{I: gen.idx, V: finalShare1},
+		Share2:   &share.PriShare{I: gen.idx, V: finalShare2},
 	}, nil
 }
