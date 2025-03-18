@@ -12,6 +12,7 @@ import (
 type Network struct {
 	Generators []*DistKeyGenerator
 	Suite      kyber.Group
+	Nodes      []Node
 }
 
 func NewNetwork(t, n int) *Network {
@@ -35,6 +36,7 @@ func NewNetwork(t, n int) *Network {
 	return &Network{
 		Generators: generators,
 		Suite:      suite,
+		Nodes:      nodes,
 	}
 }
 
@@ -132,4 +134,151 @@ func TestDKGNew(t *testing.T) {
 
 	t.Logf("BN254 public key: %v", pubPoly.Commit())
 	t.Logf("BLS12-381 public key: %v", pubPoly2.Commit())
+}
+
+func TestDKGReshare(t *testing.T) {
+	th := 3
+	n := 5
+	net := NewNetwork(th, n)
+	bundles := make([]*DealBundle, n)
+	for _, node := range net.Generators {
+		if node == nil {
+			t.Fatal("node is nil")
+		}
+		bundle, err := node.Deal()
+		if err != nil {
+			t.Fatal(err)
+		}
+		bundles[node.idx] = bundle
+	}
+
+	distKeys := make([]*DistKeyShare, n)
+	for _, gen := range net.Generators {
+		if gen == nil {
+			t.Fatal("gen is nil")
+		}
+		distKey, err := gen.ProcessDealBundles(bundles)
+		if err != nil {
+			t.Fatal(err)
+		}
+		distKeys[gen.idx] = distKey
+
+	}
+	// make sure all public keys are the same
+	pk := distKeys[1].Commits1[0]
+
+	for _, dk := range distKeys {
+		if !pk.Equal(dk.Commits1[0]) {
+			t.Fatal("public key not equal")
+		}
+	}
+
+	//tblScheme := bls.NewSchemeOnG1(nodeIdSuite)
+	gen := net.Generators[0]
+	scheme1 := tbls.NewThresholdSchemeOnG1(gen.suite1)
+	scheme2 := tbls.NewThresholdSchemeOnG1(gen.suite2)
+	msg := []byte("Hello BLS")
+	sigShares1 := make([][]byte, 0)
+	sigShares2 := make([][]byte, 0)
+	for _, distKey := range distKeys {
+		sig, err := scheme1.Sign(distKey.Share1, msg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sigShares1 = append(sigShares1, sig)
+
+		sig, err = scheme2.Sign(distKey.Share2, msg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sigShares2 = append(sigShares2, sig)
+	}
+	priShares1 := make([]*share.PriShare, 0)
+	for _, dk := range distKeys {
+		priShares1 = append(priShares1, dk.Share1)
+	}
+	secretPoly, err := share.RecoverPriPoly(gen.suite1.G2(), priShares1, th, n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pubPolyExp := secretPoly.Commit(gen.suite1.G2().Point().Base())
+	pubPoly := share.NewPubPoly(gen.suite1.G2(), nil, distKeys[1].Commits1)
+	if !pubPoly.Equal(pubPolyExp) {
+		t.Fatal("public key not equal")
+	}
+
+	sig, err := scheme1.Recover(pubPoly, msg, sigShares1, th, n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = scheme1.VerifyRecovered(pubPoly.Commit(), msg, sig)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pubPoly2 := share.NewPubPoly(gen.suite2.G2(), nil, distKeys[1].Commits2)
+
+	sig, err = scheme2.Recover(pubPoly2, msg, sigShares2, th, n)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = scheme2.VerifyRecovered(pubPoly2.Commit(), msg, sig)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("BN254 public key: %v", pubPoly.Commit())
+	t.Logf("Post-reshare: BN254 pubPoly threshold %d", pubPoly.Threshold())
+
+	t.Logf("BLS12-381 public key: %v", pubPoly2.Commit())
+
+	// Reshare
+	n2 := 10
+	th2 := 8
+	net2 := NewNetwork(th2, n2)
+	bundles2 := make([]*DealBundle, 0)
+	for _, gen := range net.Generators {
+		if gen == nil {
+			t.Fatal("gen is nil")
+		}
+		bundle, err := gen.Reshare(distKeys[gen.idx], net2.Nodes, th2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bundles2 = append(bundles2, bundle)
+	}
+	distKeys2 := make([]*DistKeyShare, 0)
+	for _, gen := range net2.Generators {
+		if gen == nil {
+			t.Fatal("gen is nil")
+		}
+		distKey, err := gen.ProcessReshareDealBundles(bundles2, th, n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		distKeys2 = append(distKeys2, distKey)
+	}
+	pubPoly = share.NewPubPoly(gen.suite1.G2(), nil, distKeys2[1].Commits1)
+	t.Logf("Post-reshare: BN254 public key: %v", pubPoly.Commit())
+	t.Logf("Post-reshare: BN254 pubPoly threshold %d", pubPoly.Threshold())
+	{
+		sigShares1 := make([][]byte, 0)
+		for _, distKey := range distKeys2 {
+			sig, err := scheme1.Sign(distKey.Share1, msg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sigShares1 = append(sigShares1, sig)
+		}
+		sig, err := scheme1.Recover(pubPoly, msg, sigShares1, th2, n2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = scheme1.VerifyRecovered(pubPoly.Commit(), msg, sig)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
 }
