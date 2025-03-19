@@ -106,7 +106,7 @@ func NewDistKeyGenerator(idx uint32, threshold int, nodes []Node, nodeIdSecret k
 // Deal is the first phase of the DKG protocol where the node creates VSS shares and commits
 // each node should call this Deal and generate a DealBundle for other nodes (broadcast is fine
 // as recipient needs to decrypt their share)
-func (gen *DistKeyGenerator) Deal() (*DealBundle, error) {
+func (gen *DistKeyGenerator) NewDKGDeal() (*DealBundle, error) {
 	deals := make([]Deal, 0, len(gen.nodes))
 
 	for _, node := range gen.nodes {
