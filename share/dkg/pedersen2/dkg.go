@@ -48,23 +48,19 @@ type DistKeyGenerator struct {
 	idx          uint32 // node index; significant as it's the x in lagrange interpolation
 	threshold    int    // threshold+1 is the number of nodes needed to reconstruct the secret
 
-	// curve 1: BN254
-	suite1 pairing.Suite
-	dpriv1 *share.PriPoly
-	dpub1  *share.PubPoly
+	// two curves: BN254 and BLS12-381
+	suite       [2]pairing.Suite
+	dpriv       [2]*share.PriPoly
+	dpub        [2]*share.PubPoly
+	validShares [2]map[uint32]kyber.Scalar
+	allPublics  [2]map[uint32]*share.PubPoly
 
 	// curve 2: BLS12-381
-	suite2 pairing.Suite
-	dpriv2 *share.PriPoly
-	dpub2  *share.PubPoly
-
-	// the valid shares we received; scalar is not dependent on curve
-	validShares1 map[uint32]kyber.Scalar
-	validShares2 map[uint32]kyber.Scalar
-
-	// all public polynomials we have seen on two curves; 1 is on BN254, 2 is on BLS12-381
-	allPublics1 map[uint32]*share.PubPoly
-	allPublics2 map[uint32]*share.PubPoly
+	//suite2       pairing.Suite
+	//dpriv2       *share.PriPoly
+	//dpub2        *share.PubPoly
+	//validShares2 map[uint32]kyber.Scalar
+	//allPublics2  map[uint32]*share.PubPoly
 }
 
 // If new DKG, this function will create the secret s (dpriv1) and populate the field in result
@@ -90,16 +86,11 @@ func NewDistKeyGenerator(idx uint32, threshold int, nodes []Node, nodeIdSecret k
 		nodes:        nodes,
 		idx:          idx,
 		threshold:    threshold,
-		suite1:       suite1,
-		dpriv1:       dpriv1,
-		dpub1:        dpub1,
-		suite2:       suite2,
-		dpriv2:       dpriv2,
-		dpub2:        dpub2,
-		validShares1: make(map[uint32]kyber.Scalar),
-		validShares2: make(map[uint32]kyber.Scalar),
-		allPublics1:  make(map[uint32]*share.PubPoly),
-		allPublics2:  make(map[uint32]*share.PubPoly),
+		suite:        [2]pairing.Suite{suite1, suite2},
+		dpriv:        [2]*share.PriPoly{dpriv1, dpriv2},
+		dpub:         [2]*share.PubPoly{dpub1, dpub2},
+		validShares:  [2]map[uint32]kyber.Scalar{make(map[uint32]kyber.Scalar), make(map[uint32]kyber.Scalar)},
+		allPublics:   [2]map[uint32]*share.PubPoly{make(map[uint32]*share.PubPoly), make(map[uint32]*share.PubPoly)},
 	}
 }
 
@@ -111,8 +102,8 @@ func (gen *DistKeyGenerator) NewDKGDeal() (*DealBundle, error) {
 
 	for _, node := range gen.nodes {
 		// compute share
-		si1 := gen.dpriv1.Eval(node.Index).V
-		si2 := gen.dpriv2.Eval(node.Index).V
+		si1 := gen.dpriv[0].Eval(node.Index).V
+		si2 := gen.dpriv[1].Eval(node.Index).V
 		msg1, _ := si1.MarshalBinary()
 		msg2, _ := si2.MarshalBinary()
 		cipher1, err := ecies.Encrypt(gen.nodeIdSuite, node.Public, msg1, nil)
@@ -129,8 +120,8 @@ func (gen *DistKeyGenerator) NewDKGDeal() (*DealBundle, error) {
 			EncryptedShare2: cipher2,
 		})
 	}
-	_, commits1 := gen.dpub1.Info()
-	_, commits2 := gen.dpub2.Info()
+	_, commits1 := gen.dpub[0].Info()
+	_, commits2 := gen.dpub[1].Info()
 	return &DealBundle{
 		DealerIndex: gen.idx,
 		Deals:       deals,
@@ -149,11 +140,11 @@ func (gen *DistKeyGenerator) ProcessDealBundles(bundles []*DealBundle) (*DistKey
 		return nil, fmt.Errorf("DKG: can't process deal bundles because len(bundles) != len(nodes); need all nodes to submit their deals")
 	}
 	for _, bundle := range bundles {
-		gen.allPublics1[bundle.DealerIndex] = share.NewPubPoly(gen.suite1.G2(), nil, bundle.Public1)
-		gen.allPublics2[bundle.DealerIndex] = share.NewPubPoly(gen.suite2.G2(), nil, bundle.Public2)
+		gen.allPublics[0][bundle.DealerIndex] = share.NewPubPoly(gen.suite[0].G2(), nil, bundle.Public1)
+		gen.allPublics[1][bundle.DealerIndex] = share.NewPubPoly(gen.suite[1].G2(), nil, bundle.Public2)
 	}
-	finalShare1 := gen.suite1.G2().Scalar().Zero()
-	finalShare2 := gen.suite2.G2().Scalar().Zero()
+	finalShare1 := gen.suite[0].G2().Scalar().Zero()
+	finalShare2 := gen.suite[1].G2().Scalar().Zero()
 	var err error
 	var finalPub1 *share.PubPoly
 	var finalPub2 *share.PubPoly
@@ -167,41 +158,41 @@ func (gen *DistKeyGenerator) ProcessDealBundles(bundles []*DealBundle) (*DistKey
 			if err != nil {
 				return nil, err
 			}
-			sh := gen.suite1.G2().Scalar().SetBytes(plain1)
-			gen.validShares1[bundle.DealerIndex] = sh
+			sh := gen.suite[0].G2().Scalar().SetBytes(plain1)
+			gen.validShares[0][bundle.DealerIndex] = sh
 
 			plain2, err := ecies.Decrypt(gen.nodeIdSuite, gen.nodeIdSecret, deal.EncryptedShare2, nil)
 			if err != nil {
 				return nil, err
 			}
-			sh = gen.suite2.G2().Scalar().SetBytes(plain2)
-			gen.validShares2[bundle.DealerIndex] = sh
+			sh = gen.suite[1].G2().Scalar().SetBytes(plain2)
+			gen.validShares[1][bundle.DealerIndex] = sh
 		}
-		sh1, ok := gen.validShares1[n.Index]
+		sh1, ok := gen.validShares[0][n.Index]
 		if !ok {
 			return nil, fmt.Errorf("BUG: private share (BN254) not found from dealer %d", n.Index)
 		}
-		sh2, ok := gen.validShares2[n.Index]
+		sh2, ok := gen.validShares[1][n.Index]
 		if !ok {
 			return nil, fmt.Errorf("BUG: private share (BLS12-381) not found from dealer %d", n.Index)
 		}
 
-		pub1, ok := gen.allPublics1[n.Index]
+		pub1, ok := gen.allPublics[0][n.Index]
 		if !ok {
 			return nil, fmt.Errorf("BUG: idx %d public BN254 polynomial not found from dealer %d", gen.idx, n.Index)
 		}
-		pub2, ok := gen.allPublics2[n.Index]
+		pub2, ok := gen.allPublics[1][n.Index]
 		if !ok {
 			return nil, fmt.Errorf("BUG: idx %d public BLS12-381 polynomial not found from dealer %d", gen.idx, n.Index)
 		}
 		// check if share is valid w.r.t. public commitment
 		comm := pub1.Eval(gen.idx).V
-		commShare := gen.suite1.G2().Point().Mul(sh1, nil)
+		commShare := gen.suite[0].G2().Point().Mul(sh1, nil)
 		if !comm.Equal(commShare) {
 			return nil, fmt.Errorf("Deal share invalid wrt public poly (BN254)")
 		}
 		comm = pub2.Eval(gen.idx).V
-		commShare = gen.suite2.G2().Point().Mul(sh2, nil)
+		commShare = gen.suite[1].G2().Point().Mul(sh2, nil)
 		if !comm.Equal(commShare) {
 			return nil, fmt.Errorf("Deal share invalid wrt public poly (BLS12-381)")
 		}
@@ -235,6 +226,8 @@ func (gen *DistKeyGenerator) ProcessDealBundles(bundles []*DealBundle) (*DistKey
 	_, commits1 := finalPub1.Info()
 	_, commits2 := finalPub2.Info()
 	return &DistKeyShare{
+		Scheme1:  gen.suite[0],
+		Scheme2:  gen.suite[1],
 		Commits1: commits1,
 		Commits2: commits2,
 		Share1:   &share.PriShare{I: gen.idx, V: finalShare1},
@@ -250,17 +243,17 @@ func (gen *DistKeyGenerator) Reshare(distKeyShare *DistKeyShare, newNodes []Node
 	// The new nodes will receive the deal bundles and process them to get the new shares.
 	// The new nodes will then have the new shares and the public key.
 	randomStream := random.New()
-	dpriv1 := share.NewPriPoly(gen.suite1.G2(), newT, distKeyShare.Share1.V, randomStream)
-	dpub1 := dpriv1.Commit(gen.suite1.G2().Point().Base())
-	gen.dpriv1 = dpriv1
-	gen.dpub1 = dpub1
+	dpriv1 := share.NewPriPoly(gen.suite[0].G2(), newT, distKeyShare.Share1.V, randomStream)
+	dpub1 := dpriv1.Commit(gen.suite[0].G2().Point().Base())
+	gen.dpriv[0] = dpriv1
+	gen.dpub[0] = dpub1
 
 	deals := make([]Deal, 0, len(newNodes))
 	// generate a deal for each new node
 	for _, node := range newNodes {
 		// compute share
-		si1 := gen.dpriv1.Eval(node.Index).V
-		si2 := gen.dpriv2.Eval(node.Index).V
+		si1 := gen.dpriv[0].Eval(node.Index).V
+		si2 := gen.dpriv[1].Eval(node.Index).V
 		msg1, _ := si1.MarshalBinary()
 		msg2, _ := si2.MarshalBinary()
 		cipher1, err := ecies.Encrypt(gen.nodeIdSuite, node.Public, msg1, nil)
@@ -277,8 +270,8 @@ func (gen *DistKeyGenerator) Reshare(distKeyShare *DistKeyShare, newNodes []Node
 			EncryptedShare2: cipher2,
 		})
 	}
-	_, commits1 := gen.dpub1.Info()
-	_, commits2 := gen.dpub2.Info()
+	_, commits1 := gen.dpub[0].Info()
+	_, commits2 := gen.dpub[1].Info()
 	return &DealBundle{
 		DealerIndex: gen.idx,
 		Deals:       deals,
@@ -309,13 +302,13 @@ func (gen *DistKeyGenerator) ProcessReshareDealBundles(bundles []*DealBundle, ol
 				if err != nil {
 					return nil, err
 				}
-				sh := gen.suite1.G2().Scalar().SetBytes(plain)
+				sh := gen.suite[0].G2().Scalar().SetBytes(plain)
 				shares = append(shares, &share.PriShare{I: bundle.DealerIndex, V: sh})
 			}
 		}
 	}
 
-	priPoly, err := share.RecoverPriPoly(gen.suite1.G2(), shares, oldT, oldN)
+	priPoly, err := share.RecoverPriPoly(gen.suite[0].G2(), shares, oldT, oldN)
 	if err != nil {
 		return nil, err
 	}
@@ -330,17 +323,18 @@ func (gen *DistKeyGenerator) ProcessReshareDealBundles(bundles []*DealBundle, ol
 		for j := range coeffs {
 			tmpCoeffs = append(tmpCoeffs, &share.PubShare{I: j, V: coeffs[j][i]})
 		}
-		coeff, err := share.RecoverCommit(gen.suite1.G2(), tmpCoeffs, oldT, oldN)
+		coeff, err := share.RecoverCommit(gen.suite[0].G2(), tmpCoeffs, oldT, oldN)
 		if err != nil {
 			return nil, err
 		}
 		finalCoeffs[i] = coeff
 	}
-	pubPoly := share.NewPubPoly(gen.suite1.G2(), nil, finalCoeffs)
+	pubPoly := share.NewPubPoly(gen.suite[0].G2(), nil, finalCoeffs)
 	if !pubPoly.Check(privateShare) {
 		return nil, fmt.Errorf("Node %d: public polynomial check failed", gen.idx)
 	}
 	return &DistKeyShare{
+		Scheme1:  gen.suite[0],
 		Commits1: finalCoeffs,
 		//Commits2: commits2,
 		//Share1:   &share.PriShare{I: gen.idx, V: finalShare1},

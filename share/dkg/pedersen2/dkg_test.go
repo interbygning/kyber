@@ -77,10 +77,9 @@ func TestDKGNew(t *testing.T) {
 		}
 	}
 
-	//tblScheme := bls.NewSchemeOnG1(nodeIdSuite)
 	gen := net.Generators[0]
-	scheme1 := tbls.NewThresholdSchemeOnG1(gen.suite1)
-	scheme2 := tbls.NewThresholdSchemeOnG1(gen.suite2)
+	scheme1 := tbls.NewThresholdSchemeOnG1(gen.suite[0])
+	scheme2 := tbls.NewThresholdSchemeOnG1(gen.suite[1])
 	msg := []byte("Hello BLS")
 	sigShares1 := make([][]byte, 0)
 	sigShares2 := make([][]byte, 0)
@@ -101,12 +100,12 @@ func TestDKGNew(t *testing.T) {
 	for _, dk := range distKeys {
 		priShares1 = append(priShares1, dk.Share1)
 	}
-	secretPoly, err := share.RecoverPriPoly(gen.suite1.G2(), priShares1, th, n)
+	secretPoly, err := share.RecoverPriPoly(gen.suite[0].G2(), priShares1, th, n)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pubPolyExp := secretPoly.Commit(gen.suite1.G2().Point().Base())
-	pubPoly := share.NewPubPoly(gen.suite1.G2(), nil, distKeys[1].Commits1)
+	pubPolyExp := secretPoly.Commit(gen.suite[0].G2().Point().Base())
+	pubPoly := share.NewPubPoly(gen.suite[0].G2(), nil, distKeys[1].Commits1)
 	if !pubPoly.Equal(pubPolyExp) {
 		t.Fatal("public key not equal")
 	}
@@ -120,7 +119,7 @@ func TestDKGNew(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pubPoly2 := share.NewPubPoly(gen.suite2.G2(), nil, distKeys[1].Commits2)
+	pubPoly2 := share.NewPubPoly(gen.suite[1].G2(), nil, distKeys[1].Commits2)
 
 	sig, err = scheme2.Recover(pubPoly2, msg, sigShares2, th, n)
 	if err != nil {
@@ -175,8 +174,8 @@ func TestDKGReshare(t *testing.T) {
 
 	//tblScheme := bls.NewSchemeOnG1(nodeIdSuite)
 	gen := net.Generators[0]
-	scheme1 := tbls.NewThresholdSchemeOnG1(gen.suite1)
-	scheme2 := tbls.NewThresholdSchemeOnG1(gen.suite2)
+	scheme1 := tbls.NewThresholdSchemeOnG1(gen.suite[0])
+	scheme2 := tbls.NewThresholdSchemeOnG1(gen.suite[1])
 	msg := []byte("Hello BLS")
 	sigShares1 := make([][]byte, 0)
 	sigShares2 := make([][]byte, 0)
@@ -197,15 +196,17 @@ func TestDKGReshare(t *testing.T) {
 	for _, dk := range distKeys {
 		priShares1 = append(priShares1, dk.Share1)
 	}
-	secretPoly, err := share.RecoverPriPoly(gen.suite1.G2(), priShares1, th, n)
+	secretPoly, err := share.RecoverPriPoly(gen.suite[0].G2(), priShares1, th, n)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pubPolyExp := secretPoly.Commit(gen.suite1.G2().Point().Base())
-	pubPoly := share.NewPubPoly(gen.suite1.G2(), nil, distKeys[1].Commits1)
+	pubPolyExp := secretPoly.Commit(gen.suite[0].G2().Point().Base())
+	pubPoly := share.NewPubPoly(gen.suite[0].G2(), nil, distKeys[1].Commits1)
 	if !pubPoly.Equal(pubPolyExp) {
 		t.Fatal("public key not equal")
 	}
+
+	assertNoError(t, testSign(msg, distKeys, th, n))
 
 	sig, err := scheme1.Recover(pubPoly, msg, sigShares1, th, n)
 	if err != nil {
@@ -216,7 +217,7 @@ func TestDKGReshare(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pubPoly2 := share.NewPubPoly(gen.suite2.G2(), nil, distKeys[1].Commits2)
+	pubPoly2 := share.NewPubPoly(gen.suite[1].G2(), nil, distKeys[1].Commits2)
 
 	sig, err = scheme2.Recover(pubPoly2, msg, sigShares2, th, n)
 	if err != nil {
@@ -259,7 +260,7 @@ func TestDKGReshare(t *testing.T) {
 		}
 		distKeys2 = append(distKeys2, distKey)
 	}
-	pubPoly2 = share.NewPubPoly(gen.suite1.G2(), nil, distKeys2[1].Commits1)
+	pubPoly2 = share.NewPubPoly(gen.suite[0].G2(), nil, distKeys2[1].Commits1)
 	t.Logf("Post-reshare: BN254 public key: %v", pubPoly2.Commit())
 	t.Logf("Post-reshare: BN254 pubPoly threshold %d", pubPoly2.Threshold())
 	if !pubPoly2.Commit().Equal(pubPoly.Commit()) {
@@ -305,13 +306,34 @@ func TestDKGReshare(t *testing.T) {
 		}
 		distKeys3 = append(distKeys3, distKey)
 	}
-	pubPoly3 := share.NewPubPoly(gen.suite1.G2(), nil, distKeys3[2].Commits1)
+	pubPoly3 := share.NewPubPoly(gen.suite[0].G2(), nil, distKeys3[2].Commits1)
 	t.Logf("Post-reshare2: BN254 public key: %v", pubPoly3.Commit())
 	t.Logf("Post-reshare2: threshold: %d", pubPoly3.Threshold())
 	if !pubPoly3.Commit().Equal(pubPoly2.Commit()) {
 		t.Logf("reshare-reshare failed; pubkey changed")
 	}
 
+}
+
+func testSign(msg []byte, distKeys []*DistKeyShare, th int, n int) error {
+	scheme := distKeys[0].Scheme1
+	tscheme := tbls.NewThresholdSchemeOnG1(scheme)
+
+	sigShares := make([][]byte, 0)
+	for _, distKey := range distKeys {
+		sig, err := tscheme.Sign(distKey.Share1, msg)
+		if err != nil {
+			return err
+		}
+		sigShares = append(sigShares, sig)
+	}
+	pubPoly := share.NewPubPoly(scheme.G2(), nil, distKeys[0].Commits1)
+	sig, err := tscheme.Recover(pubPoly, msg, sigShares, th, n)
+	if err != nil {
+		return err
+	}
+	err = tscheme.VerifyRecovered(pubPoly.Commit(), msg, sig)
+	return err
 }
 
 func assertNoError(t *testing.T, err error) {

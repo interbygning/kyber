@@ -2,6 +2,7 @@ package pedersen2
 
 import (
 	"go.dedis.ch/kyber/v4"
+	"go.dedis.ch/kyber/v4/pairing"
 	"go.dedis.ch/kyber/v4/share"
 )
 
@@ -66,6 +67,8 @@ type Deal struct {
 }
 
 type DistKeyShare struct {
+	Scheme1  pairing.Suite
+	Scheme2  pairing.Suite
 	Commits1 []kyber.Point // BN254
 	Commits2 []kyber.Point // BLS12-381
 	Share1   *share.PriShare
