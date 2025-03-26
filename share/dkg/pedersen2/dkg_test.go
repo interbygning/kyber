@@ -260,26 +260,45 @@ func TestDKGReshare(t *testing.T) {
 		}
 		distKeys2 = append(distKeys2, distKey)
 	}
-	pubPoly2 = share.NewPubPoly(gen.suite[0].G2(), nil, distKeys2[1].Commits1)
-	t.Logf("Post-reshare: BN254 public key: %v", pubPoly2.Commit())
-	t.Logf("Post-reshare: BN254 pubPoly threshold %d", pubPoly2.Threshold())
-	if !pubPoly2.Commit().Equal(pubPoly.Commit()) {
+	pubPoly1 := share.NewPubPoly(gen.suite[0].G2(), nil, distKeys2[1].Commits1)
+	pubPoly2 = share.NewPubPoly(gen.suite[1].G2(), nil, distKeys2[1].Commits2)
+	t.Logf("Post-reshare: BN254 public key: %v", pubPoly1.Commit())
+	t.Logf("Post-reshare: BN254 pubPoly threshold %d", pubPoly1.Threshold())
+	t.Logf("Post-reshare: BLS12-381 public key: %v", pubPoly2.Commit())
+	t.Logf("Post-reshare: BLS12-381 pubPoly threshold %d", pubPoly2.Threshold())
+
+	if !pubPoly1.Commit().Equal(pubPoly.Commit()) {
 		t.Fatal("reshare failed; pubkey not the same after reshare")
 	}
 	{
 		sigShares1 := make([][]byte, 0)
+		sigShares2 := make([][]byte, 0)
 		for _, distKey := range distKeys2 {
 			sig, err := scheme1.Sign(distKey.Share1, msg)
 			if err != nil {
 				t.Fatal(err)
 			}
 			sigShares1 = append(sigShares1, sig)
+			sig, err = scheme2.Sign(distKey.Share2, msg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sigShares2 = append(sigShares2, sig)
+
 		}
-		sig, err := scheme1.Recover(pubPoly2, msg, sigShares1, th2, n2)
+		sig, err := scheme1.Recover(pubPoly1, msg, sigShares1, th2, n2)
 		if err != nil {
 			t.Fatal(err)
 		}
-		err = scheme1.VerifyRecovered(pubPoly2.Commit(), msg, sig)
+		err = scheme1.VerifyRecovered(pubPoly1.Commit(), msg, sig)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sig, err = scheme2.Recover(pubPoly2, msg, sigShares2, th2, n2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = scheme2.VerifyRecovered(pubPoly2.Commit(), msg, sig)
 		if err != nil {
 			t.Fatal(err)
 		}

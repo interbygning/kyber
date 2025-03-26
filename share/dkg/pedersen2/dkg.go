@@ -54,13 +54,6 @@ type DistKeyGenerator struct {
 	dpub        [2]*share.PubPoly
 	validShares [2]map[uint32]kyber.Scalar
 	allPublics  [2]map[uint32]*share.PubPoly
-
-	// curve 2: BLS12-381
-	//suite2       pairing.Suite
-	//dpriv2       *share.PriPoly
-	//dpub2        *share.PubPoly
-	//validShares2 map[uint32]kyber.Scalar
-	//allPublics2  map[uint32]*share.PubPoly
 }
 
 // If new DKG, this function will create the secret s (dpriv1) and populate the field in result
@@ -244,9 +237,13 @@ func (gen *DistKeyGenerator) Reshare(distKeyShare *DistKeyShare, newNodes []Node
 	// The new nodes will then have the new shares and the public key.
 	randomStream := random.New()
 	dpriv1 := share.NewPriPoly(gen.suite[0].G2(), newT, distKeyShare.Share1.V, randomStream)
+	dpriv2 := share.NewPriPoly(gen.suite[1].G2(), newT, distKeyShare.Share2.V, randomStream)
 	dpub1 := dpriv1.Commit(gen.suite[0].G2().Point().Base())
+	dpub2 := dpriv2.Commit(gen.suite[1].G2().Point().Base())
 	gen.dpriv[0] = dpriv1
+	gen.dpriv[1] = dpriv2
 	gen.dpub[0] = dpub1
+	gen.dpub[1] = dpub2
 
 	deals := make([]Deal, 0, len(newNodes))
 	// generate a deal for each new node
@@ -286,15 +283,18 @@ func (gen *DistKeyGenerator) Reshare(distKeyShare *DistKeyShare, newNodes []Node
 // When all bundles are available, then process all bundles, compute the local private share,
 // and return the public key share
 func (gen *DistKeyGenerator) ProcessReshareDealBundles(bundles []*DealBundle, oldT int, oldN int) (*DistKeyShare, error) {
-	shares := make([]*share.PriShare, 0, oldN)
-	coeffs := make(map[uint32][]kyber.Point, oldN)
+	shares1 := make([]*share.PriShare, 0, oldN)
+	shares2 := make([]*share.PriShare, 0, oldN)
+	coeffs1 := make(map[uint32][]kyber.Point, oldN)
+	coeffs2 := make(map[uint32][]kyber.Point, oldN)
 
 	dealsForMe := make([]Deal, 0)
 	for _, bundle := range bundles {
 		if bundle == nil {
 			return nil, fmt.Errorf("Node %d received nil bundle\n", gen.idx)
 		}
-		coeffs[bundle.DealerIndex] = bundle.Public1
+		coeffs1[bundle.DealerIndex] = bundle.Public1
+		coeffs2[bundle.DealerIndex] = bundle.Public2
 		for _, deal := range bundle.Deals {
 			if deal.ShareIndex == gen.idx {
 				dealsForMe = append(dealsForMe, deal)
@@ -303,42 +303,71 @@ func (gen *DistKeyGenerator) ProcessReshareDealBundles(bundles []*DealBundle, ol
 					return nil, err
 				}
 				sh := gen.suite[0].G2().Scalar().SetBytes(plain)
-				shares = append(shares, &share.PriShare{I: bundle.DealerIndex, V: sh})
+				shares1 = append(shares1, &share.PriShare{I: bundle.DealerIndex, V: sh})
+
+				plain, err = ecies.Decrypt(gen.nodeIdSuite, gen.nodeIdSecret, deal.EncryptedShare2, nil)
+				if err != nil {
+					return nil, err
+				}
+				sh = gen.suite[1].G2().Scalar().SetBytes(plain)
+				shares2 = append(shares2, &share.PriShare{I: bundle.DealerIndex, V: sh})
 			}
 		}
 	}
 
-	priPoly, err := share.RecoverPriPoly(gen.suite[0].G2(), shares, oldT, oldN)
+	priPoly1, err := share.RecoverPriPoly(gen.suite[0].G2(), shares1, oldT, oldN)
 	if err != nil {
 		return nil, err
 	}
-	privateShare := &share.PriShare{
+	priPoly2, err := share.RecoverPriPoly(gen.suite[1].G2(), shares2, oldT, oldN)
+	if err != nil {
+		return nil, err
+	}
+	privateShare1 := &share.PriShare{
 		I: gen.idx,
-		V: priPoly.Secret(),
+		V: priPoly1.Secret(),
+	}
+	privateShare2 := &share.PriShare{
+		I: gen.idx,
+		V: priPoly2.Secret(),
 	}
 	newT := gen.threshold
-	finalCoeffs := make([]kyber.Point, newT)
+	finalCoeffs1 := make([]kyber.Point, newT)
+	finalCoeffs2 := make([]kyber.Point, newT)
 	for i := 0; i < newT; i++ {
 		tmpCoeffs := make([]*share.PubShare, 0, oldN)
-		for j := range coeffs {
-			tmpCoeffs = append(tmpCoeffs, &share.PubShare{I: j, V: coeffs[j][i]})
+		for j := range coeffs1 {
+			tmpCoeffs = append(tmpCoeffs, &share.PubShare{I: j, V: coeffs1[j][i]})
 		}
 		coeff, err := share.RecoverCommit(gen.suite[0].G2(), tmpCoeffs, oldT, oldN)
 		if err != nil {
 			return nil, err
 		}
-		finalCoeffs[i] = coeff
+		finalCoeffs1[i] = coeff
+
+		tmpCoeffs = make([]*share.PubShare, 0, oldN)
+		for j := range coeffs2 {
+			tmpCoeffs = append(tmpCoeffs, &share.PubShare{I: j, V: coeffs2[j][i]})
+		}
+		coeff, err = share.RecoverCommit(gen.suite[1].G2(), tmpCoeffs, oldT, oldN)
+		if err != nil {
+			return nil, err
+		}
+		finalCoeffs2[i] = coeff
 	}
-	pubPoly := share.NewPubPoly(gen.suite[0].G2(), nil, finalCoeffs)
-	if !pubPoly.Check(privateShare) {
+	pubPoly1 := share.NewPubPoly(gen.suite[0].G2(), nil, finalCoeffs1)
+	if !pubPoly1.Check(privateShare1) {
+		return nil, fmt.Errorf("Node %d: public polynomial check failed", gen.idx)
+	}
+	pubPoly2 := share.NewPubPoly(gen.suite[1].G2(), nil, finalCoeffs2)
+	if !pubPoly2.Check(privateShare2) {
 		return nil, fmt.Errorf("Node %d: public polynomial check failed", gen.idx)
 	}
 	return &DistKeyShare{
 		Scheme1:  gen.suite[0],
-		Commits1: finalCoeffs,
-		//Commits2: commits2,
-		//Share1:   &share.PriShare{I: gen.idx, V: finalShare1},
-		Share1: privateShare,
-		//Share2:   &share.PriShare{I: gen.idx, V: finalShare2},
+		Commits1: finalCoeffs1,
+		Commits2: finalCoeffs2,
+		Share1:   privateShare1,
+		Share2:   privateShare2,
 	}, nil
 }
