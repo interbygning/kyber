@@ -103,3 +103,4 @@
 2025-08-10 11:35:56 upgrade dependencies
 2025-07-23 15:21:40 fix UI alignment
 2025-07-01 16:58:26 change configuration
+2025-06-15 17:42:56 fix build error
